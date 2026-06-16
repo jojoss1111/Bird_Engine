@@ -30,20 +30,31 @@ static TileSpr _tilesspr[256];
 
 
 static inline void _iswap(int *a, int *b) { int t = *a; *a = *b; *b = t; }
+static inline void _blender(uint32_t *dst, uint32_t cor);
 
 static inline void _pixel(Janelas *j, int x, int y, uint32_t cor) {
-    j->pixels[y * j->largura + x] = cor;
+    uint8_t a = (uint8_t)(cor >> 24);
+    if (a == 0)   return;
+    if (a == 255) { j->pixels[y * j->largura + x] = cor; return; }
+    _blender(&j->pixels[y * j->largura + x], cor);
 }
 
 static inline void _preencher_linha(uint32_t *dst, int n, uint32_t cor) {
+    uint8_t a = (uint8_t)(cor >> 24);
+    if (a == 0) return;
+
+    if (a == 255) {
 #ifdef __SSE2__
-    __m128i c = _mm_set1_epi32((int)cor);
-    int i = 0;
-    for (; i + 4 <= n; i += 4) _mm_storeu_si128((__m128i *)(dst + i), c);
-    for (; i < n; i++) dst[i] = cor;
+        __m128i c = _mm_set1_epi32((int)cor);
+        int i = 0;
+        for (; i + 4 <= n; i += 4) _mm_storeu_si128((__m128i *)(dst + i), c);
+        for (; i < n; i++) dst[i] = cor;
 #else
-    for (int i = 0; i < n; i++) dst[i] = cor;
+        for (int i = 0; i < n; i++) dst[i] = cor;
 #endif
+    } else {
+        for (int i = 0; i < n; i++) _blender(&dst[i], cor);
+    }
 }
 
 static inline void _cam_pixel(const Janelas *j, float x, float y, int *ox, int *oy) {
@@ -445,9 +456,9 @@ static inline void _blender(uint32_t *dst, uint32_t cor) {
                            + ((uint32_t)(fundo >> 16) & 0xFF) * ia) >> 8);
     uint8_t ng = (uint8_t)((((uint32_t)(cor   >>  8) & 0xFF) * a
                            + ((uint32_t)(fundo >>  8) & 0xFF) * ia) >> 8);
-    uint8_t nb = (uint8_t)((((uint32_t)(cor         & 0xFF)) * a
-                           + ((uint32_t)(fundo       & 0xFF)) * ia) >> 8);
-    *dst = (0xFFu << 24) | ((uint32_t)nr << 16) | ((uint32_t)ng << 8) | nb;
+    uint8_t nb = (uint8_t)((((uint32_t)(cor         & 0xFF)) * a + ((uint32_t)(fundo       & 0xFF)) * ia) >> 8);
+    uint8_t na = (uint8_t)(a + (uint8_t)(((uint32_t)(fundo >> 24) * ia) >> 8));
+    *dst = ((uint32_t)na << 24) | ((uint32_t)nr << 16) | ((uint32_t)ng << 8) | nb;
 }
 
 int carregar_atlas(Atlas *atlas, const char *caminho) {
